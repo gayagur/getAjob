@@ -1,6 +1,6 @@
 # 🎓 Student Job Finder
 
-A lightning-fast, visually polished job search web app built with [Streamlit](https://streamlit.io).  
+A lightning-fast, visually polished job search web app built with streamlit.  
 Designed for students and junior developers in Israel, this app finds **real, direct job links** — not just job boards.
 
 ---
