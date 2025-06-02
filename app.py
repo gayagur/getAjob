@@ -4,10 +4,6 @@ import re
 import time
 from urllib.parse import urlparse
 from tavily import TavilyClient
-import asyncio
-import aiohttp
-from concurrent.futures import ThreadPoolExecutor
-import threading
 
 # --- Page config ---
 st.set_page_config(page_title="Student Job Finder", page_icon="🎓", layout="wide")
@@ -15,7 +11,7 @@ st.set_page_config(page_title="Student Job Finder", page_icon="🎓", layout="wi
 # --- API key from secrets ---
 try:
     TAVILY_API_KEY = st.secrets["TAVILY_API_KEY"]
-    client = TavilyClient(TAVILY_API_KEY)
+    client = TavilyClient(api_key=TAVILY_API_KEY)
 except Exception as e:
     st.error("🔑 Missing TAVILY_API_KEY in Streamlit secrets.")
     st.stop()
@@ -249,14 +245,6 @@ st.markdown("""
             color: #4ecdc4 !important;
         }
 
-        /* Progress Bar */
-        .progress-container {
-            background: rgba(40, 40, 50, 0.6);
-            border-radius: 10px;
-            padding: 1rem;
-            margin: 1rem 0;
-        }
-
         /* Warning/Error Messages */
         .stWarning {
             background: rgba(255, 193, 7, 0.1);
@@ -286,7 +274,7 @@ st.markdown("""
 st.markdown("""
     <div class="main-header">
         <h1 class="main-title">🎓 Student Job Finder</h1>
-        <p class="subtitle">🔍 Find direct links to actual job postings - not just job sites!</p>
+        <p class="subtitle">🔍 Find direct links to actual job postings</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -316,199 +304,192 @@ with col3:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-
-# --- Fast parallel search functions ---
-def create_fast_queries(job_types, fields, regions):
-    """Create optimized queries for faster results"""
-    queries = []
-
-    # Most effective job sites with specific URL patterns
-    base_queries = [
-        'site:jobmaster.co.il/job/ student software developer',
-        'site:linkedin.com/jobs/view/ intern Israel tech',
-        'site:drushim.co.il student data analyst',
-        'site:jobs.co.il "סטודנט" "פיתוח"',
-        '"הגש מועמדות" "Junior" developer',
-        '"שלח קו״ח" אנליסט data'
-    ]
-
-    # Add targeted queries based on selections
-    for job_type in job_types[:2]:  # Limit to 2 job types for speed
-        for field in fields[:2]:  # Limit to 2 fields for speed
-            queries.extend([
-                f'site:jobmaster.co.il/job/ "{job_type}" "{field}"',
-                f'site:linkedin.com/jobs/view/ "{field}" Israel',
-                f'"{job_type}" "{field}" דרוש apply'
-            ])
-
-    return base_queries + queries[:10]  # Total max 16 queries
+# --- Cache for API calls ---
+if 'search_cache' not in st.session_state:
+    st.session_state.search_cache = {}
 
 
-def parallel_search(queries):
-    """Execute multiple searches in parallel for speed"""
-    results = []
+# --- Specific job search function ---
+def search_direct_job_postings(job_types, fields, regions):
+    """Search for direct job posting links, not job search sites"""
 
-    def search_single_query(query):
-        try:
-            response = client.search(
-                query=query,
-                search_depth="basic",  # Faster than advanced
-                max_results=3,
-                include_raw_content=True,
-                include_domains=[
-                    "jobmaster.co.il", "linkedin.com", "drushim.co.il",
-                    "jobs.co.il", "alljobs.co.il"
+    all_job_postings = []
+
+    for job_type in job_types[:2]:  # Limit for performance
+        for field in fields[:2]:
+            for region in regions[:1]:  # Focus on one region at a time
+
+                # Location mapping
+                location_map = {
+                    "South": "באר שבע אשדוד נגב",
+                    "Center": "תל אביב רמת גן פתח תקווה הרצליה הוד השרון",
+                    "North": "חיפה נצרת עפולה טבריה",
+                    "All of Israel": "Israel ישראל"
+                }
+                location = location_map.get(region, "Israel")
+
+                # Very specific queries that should return actual job postings
+                specific_queries = [
+                    # LinkedIn specific job postings
+                    f'site:linkedin.com/jobs/view "{job_type}" "{field}" Israel',
+                    f'site:linkedin.com/jobs/view "{field}" student intern Israel',
+
+                    # Exact job title searches
+                    f'"{field} {job_type}" {location} "apply now"',
+                    f'"{field} analyst student" {location}',
+                    f'"software engineer intern" {location}',
+
+                    # Company career pages
+                    f'"{job_type}" "{field}" {location} site:*.com/careers',
+                    f'"{job_type}" "{field}" {location} site:*.co.il',
+
+                    # Specific job board URLs
+                    f'site:jobmaster.co.il/job "{field}" {job_type}',
+                    f'site:drushim.co.il/job "{job_type}" {field}',
+
+                    # Hebrew searches
+                    f'"{field}" סטודנט משרה {location}',
+                    f'מפתח תוכנה סטודנט {location}'
                 ]
-            )
-            return response.get("results", [])
-        except Exception as e:
-            return []
 
-    # Use ThreadPoolExecutor for parallel execution
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [executor.submit(search_single_query, query) for query in queries]
+                for query in specific_queries[:6]:  # Limit queries per combination
+                    try:
+                        # Check cache first
+                        cache_key = f"{query}_direct"
+                        if cache_key in st.session_state.search_cache:
+                            results = st.session_state.search_cache[cache_key]
+                        else:
+                            response = client.search(
+                                query=query,
+                                search_depth="advanced",
+                                max_results=6
+                            )
+                            results = response.get("results", [])
+                            st.session_state.search_cache[cache_key] = results
 
-        for future in futures:
-            try:
-                batch_results = future.result(timeout=10)  # 10 second timeout
-                results.extend(batch_results)
-            except Exception:
-                continue
+                        # Filter for actual job postings
+                        for result in results:
+                            if is_actual_job_posting(result):
+                                all_job_postings.append(result)
 
-    return results
+                        time.sleep(0.3)  # Rate limiting
+
+                    except Exception as e:
+                        continue
+
+    return all_job_postings
 
 
-def extract_job_content(urls):
-    """Use Tavily Extract for better content extraction"""
-    if not urls:
-        return {}
+def is_actual_job_posting(result):
+    """Check if this is a direct job posting, not a search page"""
+    url = result.get('url', '').lower()
+    title = result.get('title', '').lower()
+    content = result.get('content', '').lower()
 
+    # LinkedIn job view URLs are always job postings
+    if '/jobs/view/' in url and 'linkedin.com' in url:
+        return True
+
+    # Job board specific patterns
+    job_board_patterns = [
+        r'jobmaster\.co\.il/job/\d+',
+        r'drushim\.co\.il/job/\d+',
+        r'alljobs\.co\.il.*jobnum=\d+',
+        r'/careers/.*\d+',
+        r'/job/\d+'
+    ]
+
+    if any(re.search(pattern, url) for pattern in job_board_patterns):
+        return True
+
+    # Positive indicators for job postings
+    job_posting_indicators = [
+        'apply now', 'apply here', 'submit application',
+        'job description', 'requirements', 'qualifications',
+        'responsibilities', 'what you will do',
+        'הגש מועמדות', 'שלח קורות חיים', 'דרישות התפקיד'
+    ]
+
+    # Negative indicators (search pages, category pages)
+    exclude_indicators = [
+        '/search?', '/search/', '/jobs?', '/browse',
+        '/categories', '/companies', '/results',
+        'job search', 'find jobs', 'browse jobs'
+    ]
+
+    # Check for exclusions first
+    if any(indicator in url or indicator in title for indicator in exclude_indicators):
+        return False
+
+    # Count positive indicators
+    positive_score = sum(1 for indicator in job_posting_indicators
+                         if indicator in title or indicator in content)
+
+    return positive_score >= 2
+
+
+def extract_company_name(url, title):
+    """Extract company name from URL or title"""
     try:
-        # Split URLs into chunks for API limits
-        url_chunks = [urls[i:i + 5] for i in range(0, len(urls), 5)]
-        extracted_content = {}
+        domain = urlparse(url).netloc.lower()
 
-        for chunk in url_chunks:
-            try:
-                response = client.extract(urls=chunk)
-                for result in response.get("results", []):
-                    url = result.get("url", "")
-                    content = result.get("raw_content", "")
-                    if url and content:
-                        extracted_content[url] = content
-            except Exception:
-                continue
+        # LinkedIn special handling
+        if 'linkedin.com' in domain:
+            if ' at ' in title:
+                company = title.split(' at ')[-1].strip()
+                # Clean up common suffixes
+                company = re.sub(r'\s*\|.*$', '', company)
+                return company
+            else:
+                return "LinkedIn Job"
 
-        return extracted_content
-    except Exception:
-        return {}
+        # Other job sites
+        company_map = {
+            'jobmaster.co.il': 'JobMaster',
+            'drushim.co.il': 'Drushim',
+            'alljobs.co.il': 'AllJobs',
+            'jobs.co.il': 'Jobs.co.il'
+        }
 
+        for domain_key, company_name in company_map.items():
+            if domain_key in domain:
+                return company_name
 
-# --- Enhanced filtering with extracted content ---
-def filter_job_links_fast(search_results, extracted_content=None):
-    """Fast filtering with better content analysis"""
-    if not search_results:
-        return []
+        # Extract from domain
+        return domain.replace('www.', '').split('.')[0].title()
 
-    job_links = []
-    seen_urls = set()
-
-    # Job URL patterns - more specific for speed
-    job_patterns = [
-        r'/job/\d{5,}',
-        r'/jobs/view/\d{8,}',
-        r'JobNum=\d{4,}',
-        r'/position/\d+',
-        r'job_id=\d+'
-    ]
-
-    # Quick exclude patterns
-    exclude_patterns = [
-        r'/search', r'/browse', r'/directory', r'/categories',
-        r'page=\d+', r'/jobs/?$'
-    ]
-
-    for result in search_results:
-        url = result.get("url", "")
-        title = result.get("title", "")
-        content = result.get("content", "")
-
-        if not url or url in seen_urls:
-            continue
-
-        # Quick exclude check
-        if any(re.search(pattern, url, re.IGNORECASE) for pattern in exclude_patterns):
-            continue
-
-        # Use extracted content if available
-        if extracted_content and url in extracted_content:
-            content = extracted_content[url]
-
-        # Quick job detection
-        is_job_url = any(re.search(pattern, url, re.IGNORECASE) for pattern in job_patterns)
-
-        # Fast content scoring
-        job_keywords = ['apply', 'position', 'requirements', 'salary', 'הגש מועמדות', 'דרוש', 'משרה']
-        content_score = sum(1 for keyword in job_keywords if keyword in (title + content).lower())
-
-        if is_job_url or content_score >= 3:
-            seen_urls.add(url)
-
-            # Quick company extraction
-            company = extract_company_fast(url)
-
-            # Clean description
-            clean_desc = clean_content_fast(content, title)
-
-            job_links.append({
-                "title": title,
-                "url": url,
-                "content": clean_desc,
-                "company": company,
-                "score": content_score
-            })
-
-    return sorted(job_links, key=lambda x: x['score'], reverse=True)[:12]
+    except:
+        return "Company"
 
 
-def extract_company_fast(url):
-    """Fast company name extraction"""
-    domain = urlparse(url).netloc.lower()
-    company_map = {
-        'jobmaster': 'JobMaster',
-        'linkedin': 'LinkedIn',
-        'drushim': 'Drushim',
-        'jobs.co.il': 'Jobs.co.il',
-        'alljobs': 'AllJobs'
-    }
-
-    for key, value in company_map.items():
-        if key in domain:
-            return value
-
-    return domain.replace('www.', '').split('.')[0].title()
-
-
-def clean_content_fast(content, title):
-    """Fast content cleaning"""
+def clean_job_description(content):
+    """Clean and format job description"""
     if not content:
         return "Job description not available"
 
-    # Remove HTML quickly
+    # Remove HTML tags
     content = re.sub(r'<[^>]+>', ' ', content)
-    content = re.sub(r'\s+', ' ', content).strip()
+    # Remove extra whitespace
+    content = re.sub(r'\s+', ' ', content)
 
-    # Take first relevant sentence
-    sentences = content.split('.')[:3]
-    relevant = []
+    # Find relevant sentences
+    sentences = content.split('.')
+    relevant_sentences = []
 
-    for sentence in sentences:
-        if (len(sentence) > 20 and
-                any(word in sentence.lower() for word in ['job', 'position', 'require', 'משרה', 'דרוש'])):
-            relevant.append(sentence.strip())
+    for sentence in sentences[:5]:
+        if (len(sentence.strip()) > 30 and
+                any(word in sentence.lower() for word in
+                    ['job', 'position', 'require', 'responsible', 'candidate', 'משרה', 'דרוש'])):
+            relevant_sentences.append(sentence.strip())
 
-    result = '. '.join(relevant) if relevant else content[:200]
-    return result + ('...' if len(result) > 200 else '')
+        if len(relevant_sentences) >= 2:
+            break
+
+    result = '. '.join(relevant_sentences)
+    if len(result) > 300:
+        result = result[:300] + '...'
+
+    return result if result else content[:250] + '...'
 
 
 def create_tags_fast(title, content):
@@ -518,17 +499,19 @@ def create_tags_fast(title, content):
 
     tag_keywords = {
         'Student': ['student', 'סטודנט'],
-        'Internship': ['intern', 'סטאז'],
-        'Remote': ['remote', 'מהבית'],
-        'Full Time': ['full time', 'מלאה'],
-        'Part Time': ['part time', 'חלקית']
+        'Internship': ['intern', 'internship', 'סטאז'],
+        'Remote': ['remote', 'work from home', 'מהבית'],
+        'Full Time': ['full time', 'full-time', 'מלאה'],
+        'Part Time': ['part time', 'part-time', 'חלקית'],
+        'Junior': ['junior', 'entry level', 'התחלה'],
+        'Senior': ['senior', 'experienced', 'בכיר']
     }
 
     for tag, keywords in tag_keywords.items():
         if any(keyword in text for keyword in keywords):
             tags.append(tag)
 
-    return tags
+    return tags[:4]
 
 
 # --- Enhanced job card display ---
@@ -551,7 +534,7 @@ def show_job_cards(results):
             </div>
             <div class="stat-box">
                 <div class="stat-number">{len(set(r['company'] for r in results))}</div>
-                <div class="stat-label">Different Sites</div>
+                <div class="stat-label">Different Companies</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -575,65 +558,95 @@ def show_job_cards(results):
 
 
 # --- Main search function ---
-def fast_job_search(job_types, fields, regions):
-    """Main fast search function"""
+def search_jobs(job_types, fields, regions):
+    """Main job search function"""
 
-    # Step 1: Create optimized queries
-    queries = create_fast_queries(job_types, fields, regions)
+    # Progress tracking
+    progress_container = st.container()
+    with progress_container:
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
 
-    # Step 2: Parallel search
-    progress_text = st.empty()
-    progress_text.text("🔍 Searching job sites...")
+    try:
+        # Step 1: Search for job postings
+        progress_text.text("🔍 Searching for direct job postings...")
+        progress_bar.progress(30)
 
-    search_results = parallel_search(queries)
+        raw_results = search_direct_job_postings(job_types, fields, regions)
 
-    progress_text.text("📊 Analyzing results...")
+        # Step 2: Process results
+        progress_text.text("📊 Processing job postings...")
+        progress_bar.progress(60)
 
-    # Step 3: Filter for job URLs
-    potential_jobs = filter_job_links_fast(search_results)
+        job_results = []
+        seen_urls = set()
 
-    # Step 4: Extract content for top results if needed
-    if potential_jobs:
-        top_urls = [job['url'] for job in potential_jobs[:8]]
-        progress_text.text("📄 Extracting job details...")
+        for result in raw_results:
+            url = result.get('url', '')
 
-        extracted_content = extract_job_content(top_urls)
+            # Skip duplicates
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
 
-        # Re-filter with extracted content
-        final_jobs = filter_job_links_fast(search_results, extracted_content)
-    else:
-        final_jobs = potential_jobs
+            # Process job data
+            title = result.get('title', 'No Title')
+            content = clean_job_description(result.get('content', ''))
+            company = extract_company_name(url, title)
 
-    progress_text.empty()
-    return final_jobs
+            job_results.append({
+                'title': title,
+                'url': url,
+                'content': content,
+                'company': company
+            })
+
+        # Step 3: Sort by relevance
+        progress_text.text("⚡ Finalizing results...")
+        progress_bar.progress(90)
+
+        # Sort by LinkedIn jobs first (usually better quality)
+        job_results.sort(key=lambda x: 0 if 'linkedin.com' in x['url'] else 1)
+
+        progress_bar.progress(100)
+        progress_text.text("✅ Search completed!")
+
+        # Clear progress
+        time.sleep(1)
+        progress_container.empty()
+
+        return job_results[:12]  # Return top 12
+
+    except Exception as e:
+        progress_container.empty()
+        st.error(f"Search failed: {str(e)}")
+        return []
 
 
-# --- Search Section ---
+# --- Search Interface ---
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    # Validation check
+    # Validation
     if not job_types:
         st.warning("⚠️ Please select at least one job type")
     elif not fields:
         st.warning("⚠️ Please select at least one field")
     elif not regions:
         st.warning("⚠️ Please select at least one region")
-    elif st.button("🔍 Search Jobs", use_container_width=True):
+    elif st.button("🔍 Search Jobs", type="primary", use_container_width=True):
         start_time = time.time()
 
-        with st.spinner("🚀 Fast searching in progress..."):
-            # Fast search
-            filtered_jobs = fast_job_search(job_types, fields, regions)
+        # Execute search
+        job_results = search_jobs(job_types, fields, regions)
 
-            search_time = time.time() - start_time
+        search_time = time.time() - start_time
 
-            if filtered_jobs:
-                st.success(f"✅ Found {len(filtered_jobs)} job postings in {search_time:.1f} seconds!")
-            else:
-                st.info(f"📦 Search completed in {search_time:.1f} seconds - try different filters")
-
-            # Display results
-            show_job_cards(filtered_jobs)
+        # Show results
+        if job_results:
+            st.success(f"🎉 Found {len(job_results)} job postings in {search_time:.1f} seconds!")
+            show_job_cards(job_results)
+        else:
+            st.warning(f"No results found in {search_time:.1f} seconds")
 
 # --- Footer ---
 st.markdown("""
