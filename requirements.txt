@@ -1,3 +1,4 @@
 streamlit
+tavily
+aiohttp
 requests
-transformers torch streamlit requests
