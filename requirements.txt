@@ -1,3 +1,5 @@
 streamlit
+tavily-python
+aiohttp
 requests
-transformers torch streamlit requests
+google-search-results
