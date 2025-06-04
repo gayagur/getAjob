@@ -1,0 +1,147 @@
+/* assets/style.css */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+    --primary-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+    --secondary-gradient: linear-gradient(135deg, #f59e0b 0%, #ef4444 50%, #ec4899 100%);
+    --accent-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #6366f1 100%);
+    --dark-bg: #0e1525;
+    --card-bg: #1c2232;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --accent-color: #38bdf8;
+    --hover-color: #0ea5e9;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+body, html, .stApp {
+    background-color: var(--dark-bg) !important;
+    color: var(--text-primary);
+    font-family: 'Space Grotesk', sans-serif;
+    padding: 0;
+    margin: 0;
+    font-size: 18px;
+}
+
+h1 {
+    font-size: 3rem !important;
+}
+
+h2 {
+    font-size: 2.3rem !important;
+}
+
+h3 {
+    font-size: 1.8rem !important;
+}
+
+label {
+    font-size: 1.3rem !important;
+    font-weight: 600;
+    color: var(--text-secondary) !important;
+}
+
+a {
+    color: var(--accent-color);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--hover-color);
+    text-decoration: underline;
+}
+
+.stButton > button {
+    background: var(--primary-gradient);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.9rem 2rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+    box-shadow: var(--shadow);
+    transition: 0.3s ease;
+}
+
+.stButton > button:hover {
+    background: var(--secondary-gradient);
+    transform: translateY(-2px);
+}
+
+.main .block-container {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+.element-container {
+    background: none !important;
+    border: none !important;
+    padding: 0;
+    margin-bottom: 2rem;
+    box-shadow: none !important;
+}
+
+.job-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2.5rem;
+    box-shadow: var(--shadow);
+    transition: 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.job-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+}
+
+.job-title {
+    font-size: 2.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.8rem;
+}
+
+.job-company {
+    font-size: 1.4rem;
+    color: var(--text-secondary);
+    margin-bottom: 1.2rem;
+}
+
+.job-desc {
+    font-size: 1.2rem;
+    line-height: 1.75;
+    color: var(--text-primary);
+}
+
+.job-tag {
+    display: inline-block;
+    background: var(--accent-gradient);
+    color: white;
+    font-size: 1rem;
+    padding: 0.4rem 1rem;
+    border-radius: 999px;
+    margin-right: 0.5rem;
+    margin-top: 0.7rem;
+}
+
+.button {
+    background: var(--secondary-gradient);
+    color: white;
+    padding: 0.8rem 1.6rem;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 1.1rem;
+    display: inline-block;
+    margin-top: 1.4rem;
+    transition: 0.3s ease-in-out;
+    text-transform: uppercase;
+    box-shadow: var(--shadow);
+}
+
+.button:hover {
+    background: var(--primary-gradient);
+    transform: scale(1.03);
+}
