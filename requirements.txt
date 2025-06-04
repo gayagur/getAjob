@@ -1,4 +1,5 @@
 streamlit
-tavily-python  
+tavily-python
 aiohttp
 requests
+google-search-results
